@@ -1,0 +1,649 @@
+import random
+import time
+import pygame
+import threading
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+from multiprocessing import Process
+from multiprocessing import Queue
+from multiprocessing import Lock
+
+__display = pygame.display
+BLACK = pygame.Color(0, 0, 0)
+COLOR_RED = pygame.Color(255, 0, 0)
+version = '1.0'
+speed = 2
+FPS = 100
+pygame.init()
+
+
+class MainGame():
+    SCREEN_WIDTH = 800
+    SCREEN_HEIGHT = 600
+    window = None
+    P1_TANK = None
+    enemy_tank_list = []
+    enemy_tank_count = 5
+    bullet_list = []
+    enemy_bullet_list = []
+    explode_list = []
+    wall_list = []
+    fire_sound = None
+    boom_sound = None
+    map = [[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 3, 3, 3, 0, 0],
+           [0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 3, 3, 3, 3, 0, 0],
+           [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 4, 4, 4, 0, 0],
+           [0, 0, 0, 0, 0, 2, 3, 3, 3, 3, 4, 4, 4, 4, 4, 0],
+           [0, 0, 0, 0, 2, 2, 3, 0, 0, 0, 4, 4, 4, 4, 4, 0],
+           [2, 2, 2, 2, 2, 0, 0, 0, 0, 0, 4, 0, 0, 0, 4, 4],
+           [0, 0, 3, 3, 3, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+           [0, 0, 3, 3, 3, 3, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0],
+           [0, 0, 3, 3, 3, 3, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0],
+           [0, 0, 3, 3, 3, 0, 1, 0, 0, 5, 0, 0, 1, 0, 0, 0],
+           [0, 0, 0, 2, 0, 1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0],
+           [0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+           ]
+    chances = 10
+
+    def create_enemy_tank(self):
+        for i in range(MainGame.enemy_tank_count):
+            random_left = random.randint(1, 8)
+            random_speed = random.randint(1, 2)
+            enemy_tank = EnemyTank(random_left * 100, 0, random_speed)
+            MainGame.enemy_tank_list.append(enemy_tank)
+
+    def ready_sound(self):
+        MainGame.fire_sound = pygame.mixer.Sound('resources/musics/fire.wav')
+        MainGame.fire_sound.set_volume(0.2)
+        MainGame.boom_sound = pygame.mixer.Sound('resources/musics/boom.wav')
+        MainGame.boom_sound.set_volume(0.2)
+
+    def multi_process(self):
+        pass
+
+    def startGame(self):
+
+        FPSCLOCK = pygame.time.Clock()
+
+        pygame.display.init()
+
+        pygame.mixer.init()
+
+        MainGame.window = pygame.display.set_mode([MainGame.SCREEN_WIDTH, MainGame.SCREEN_HEIGHT])
+
+        pygame.display.set_caption('Tank War V' + version)
+
+        self.create_walls()
+
+        MainGame.P1_TANK = Tank(450, 450)
+
+        self.create_enemy_tank()
+
+        # self.play_bgm()
+
+        self.ready_sound()
+        thread1 = threading.Thread(target=self.calculate_1)
+        thread2 = threading.Thread(target=self.calculate_2)
+
+        while True:
+            MainGame.window.fill(pygame.Color(0, 0, 255))
+
+            MainGame.window.blit(self.drawText('剩余坦克%d辆' % len(MainGame.enemy_tank_list)), (5, 5))
+            MainGame.window.blit(self.drawText('剩余机会%d' % MainGame.chances), (700, 5))
+
+            if len(MainGame.enemy_tank_list) == 0:
+                self.win_game()
+
+            elif MainGame.chances == 0 and not MainGame.P1_TANK:
+                self.lose_game()
+
+            # self.show_P1_TANK()
+
+            # self.show_enemy_tank()
+
+            # self.show_walls()
+
+            # self.show_bullet()
+
+            # self.show_enemy_bullet()
+
+            # self.show_explode()
+
+            # p1.start()
+            # p2.start()
+            # thread1.start()
+
+            self.calculate_1()
+
+            self.calculate_2()
+
+            self.getEvent()
+
+            pygame.display.update()
+            # time.sleep(0.005)
+            # FPSCLOCK.tick(FPS)
+
+    def calculate_1(self):
+        self.show_P1_TANK()
+        self.show_enemy_tank()
+
+    def calculate_2(self):
+        self.show_walls()
+
+        self.show_bullet()
+
+        self.show_enemy_bullet()
+
+        self.show_explode()
+
+    def win_game(self):
+        MainGame.window.blit(self.drawText('你赢了！！', 40), (320, 300))
+
+    def lose_game(self):
+        MainGame.window.blit(self.drawText('胜败乃兵家常事', 40), (320, 300))
+
+    def create_walls(self):
+        for i in range(len(MainGame.map)):
+            for j in range(len(MainGame.map[0])):
+                if MainGame.map[i][j] != 0:
+                    wall = Wall(50 * j, 50 * i, MainGame.map[i][j])
+                    MainGame.wall_list.append(wall)
+        '''for i in range(5):
+            wall = Wall(50 * i, 200)
+            MainGame.wall_list.append(wall)
+        for i in range(3):
+            wall = Wall(50 * i + 300, 500)
+            MainGame.wall_list.append(wall)'''
+
+    def show_walls(self):
+        for wall in MainGame.wall_list:
+            if wall.live:
+                wall.display_wall()
+            else:
+                MainGame.wall_list.remove(wall)
+
+    def show_P1_TANK(self):
+        if MainGame.P1_TANK:
+            if MainGame.P1_TANK.live:
+                if not MainGame.P1_TANK.stop:
+                    MainGame.P1_TANK.move()
+                    MainGame.P1_TANK.hit_wall()
+                if MainGame.P1_TANK.invincible > 0:
+                    MainGame.P1_TANK.invincible -= 1
+                    if MainGame.P1_TANK.invincible % 2 == 0:
+                        MainGame.P1_TANK.display_tank()
+                else:
+                    MainGame.P1_TANK.display_tank()
+
+
+            else:
+                del MainGame.P1_TANK
+                MainGame.P1_TANK = None
+
+        pass
+
+    def show_enemy_tank(self):
+        if MainGame.P1_TANK:
+            m_l = MainGame.P1_TANK.rect.left
+            m_t = MainGame.P1_TANK.rect.top
+        else:
+            m_l = random.randint(1, MainGame.SCREEN_WIDTH)
+            m_t = random.randint(1, MainGame.SCREEN_HEIGHT)
+
+        for eTank in MainGame.enemy_tank_list:
+            if eTank.live:
+                eTank.random_move(m_l, m_t)
+                eTank.hit_wall()
+                if len(MainGame.enemy_bullet_list) < (len(MainGame.enemy_tank_list) * 3):
+                    eBullet = eTank.random_fire(m_l, m_t)
+                    if eBullet:
+                        MainGame.enemy_bullet_list.append(eBullet)
+                    eTank.display_enemy_tank()
+            else:
+                MainGame.enemy_tank_list.remove(eTank)
+        pass
+
+    def show_bullet(self):
+        for bullet in MainGame.bullet_list:
+            bullet.bullet_move()
+            if bullet.live:
+                bullet.display_bullet()
+                bullet.hit_tank()
+                bullet.hit_wall()
+            else:
+                MainGame.bullet_list.remove(bullet)
+        pass
+
+    def show_enemy_bullet(self):
+        for e_bullet in MainGame.enemy_bullet_list:
+            e_bullet.bullet_move()
+            if e_bullet.live:
+                e_bullet.display_bullet()
+                e_bullet.hit_my_tank()
+                e_bullet.hit_wall()
+            else:
+                MainGame.enemy_bullet_list.remove(e_bullet)
+        pass
+
+    def show_explode(self):
+        for explode in MainGame.explode_list:
+            if explode.live:
+                explode.display_explode()
+            else:
+                MainGame.explode_list.remove(explode)
+
+    def getEvent(self):
+        eventList = pygame.event.get()
+        # pygame.key.set_repeat(100, 10)
+        for event in eventList:
+            if event.type == pygame.QUIT:
+                print('退出游戏')
+                self.gameOver()
+            if event.type == pygame.KEYDOWN:
+                if MainGame.P1_TANK and MainGame.P1_TANK.live:
+                    if event.key == pygame.K_LEFT:
+                        print('left')
+                        MainGame.P1_TANK.direction = 'L'
+                        MainGame.P1_TANK.stop = False
+                    elif event.key == pygame.K_RIGHT:
+                        print('right')
+                        MainGame.P1_TANK.direction = 'R'
+                        MainGame.P1_TANK.stop = False
+                    elif event.key == pygame.K_UP:
+                        print('up')
+                        MainGame.P1_TANK.direction = 'U'
+                        MainGame.P1_TANK.stop = False
+                    elif event.key == pygame.K_DOWN:
+                        print('down')
+                        MainGame.P1_TANK.direction = 'D'
+                        MainGame.P1_TANK.stop = False
+                    elif event.key == pygame.K_SPACE:
+                        print('fire')
+                        if len(MainGame.bullet_list) < 3:
+                            bullet = MainGame.P1_TANK.fire()
+                            MainGame.bullet_list.append(bullet)
+                if event.key == pygame.K_ESCAPE and not MainGame.P1_TANK and MainGame.chances > 0:
+                    print('轮回天生！')
+                    MainGame.chances -= 1
+                    MainGame.P1_TANK = Tank(450, 450)
+                if event.key == pygame.K_r:
+                    self.reset()
+            if (event.type == pygame.KEYUP) and MainGame.P1_TANK:  # and (sum(pygame.key.get_pressed()) == 0):
+                if event.key != pygame.K_SPACE:
+                    MainGame.P1_TANK.stop = True
+                pass
+
+            # print(pygame.key.get_pressed())
+
+    def reset(self):
+        MainGame.enemy_tank_list.clear()
+        MainGame.bullet_list.clear()
+        MainGame.enemy_bullet_list.clear()
+        MainGame.explode_list.clear()
+        MainGame.wall_list.clear()
+        del MainGame.P1_TANK
+        MainGame.P1_TANK = None
+        self.create_walls()
+        MainGame.P1_TANK = Tank(450, 450)
+        self.create_enemy_tank()
+        MainGame.chances = 10
+        pass
+
+    def drawText(self, content, size=16):
+        pygame.font.init()
+        # fonts_list = pygame.font.get_fonts()
+        # print(fonts_list)
+        font = pygame.font.SysFont('dengxian', size)
+        text_sf = font.render(content, True, COLOR_RED)
+        return text_sf
+
+    def gameOver(self):
+        pygame.quit()
+        exit()
+
+
+class BaseItem(pygame.sprite.Sprite):
+    def __init__(self):
+        pygame.sprite.Sprite.__init__(self)
+
+    pass
+
+
+class Tank(BaseItem):
+    def __init__(self, left, top):
+        super().__init__()
+
+        self.images = {
+            'U': pygame.image.load('resources/images/hero/U.png'),
+            'D': pygame.image.load('resources/images/hero/D.png'),
+            'L': pygame.image.load('resources/images/hero/L.png'),
+            'R': pygame.image.load('resources/images/hero/R.png')
+        }
+        self.images_invincible = {
+            'U': pygame.image.load('resources/images/hero/U1.png'),
+            'D': pygame.image.load('resources/images/hero/D1.png'),
+            'L': pygame.image.load('resources/images/hero/L1.png'),
+            'R': pygame.image.load('resources/images/hero/R1.png')
+        }
+        self.direction = 'U'
+        self.speed = speed
+        self.image = self.images_invincible[self.direction]
+        self.rect = self.image.get_rect()  # left top width height
+        self.rect.left = left
+        self.rect.top = top
+        self.stop = True
+        self.live = True
+        self.old_left = 0
+        self.old_top = 0
+        self.invincible = 350
+
+    def display_tank(self):
+        if self.invincible > 0:
+            self.image = self.images_invincible[self.direction]
+        else:
+            self.image = self.images[self.direction]
+        MainGame.window.blit(self.image, self.rect)
+
+    def move(self):
+        self.old_top = self.rect.top
+        self.old_left = self.rect.left
+        if self.direction == 'U':
+            if self.rect.top > 0:
+                self.rect.top -= self.speed
+        elif self.direction == 'D':
+            if self.rect.top < MainGame.SCREEN_HEIGHT - self.rect.width:
+                self.rect.top += self.speed
+        elif self.direction == 'L':
+            if self.rect.left > 0:
+                self.rect.left -= self.speed
+        elif self.direction == 'R':
+            if self.rect.left < MainGame.SCREEN_WIDTH - self.rect.height:
+                self.rect.left += self.speed
+
+    def stay(self):
+        self.rect.left = self.old_left
+        self.rect.top = self.old_top
+
+    def hit_wall(self):
+        for wall in MainGame.wall_list:
+            if wall.kind != 3 and wall.kind != 5:
+                result = pygame.sprite.collide_rect(wall, self)
+                if result:
+                    self.stay()
+
+    def fire(self):
+        bullet = Bullet(self)
+        MainGame.fire_sound.play()
+        return bullet
+
+    pass
+
+
+class MyTank(Tank):
+    pass
+
+
+class EnemyTank(Tank):
+    def __init__(self, left, top, speed):
+        super().__init__(left, top)
+        self.images = {
+            'U': pygame.image.load('resources/images/enemy/U.png'),
+            'D': pygame.image.load('resources/images/enemy/D.png'),
+            'L': pygame.image.load('resources/images/enemy/L.png'),
+            'R': pygame.image.load('resources/images/enemy/R.png')
+        }
+        self.direction = self.random_direction(300, 250)
+        self.speed = speed
+        self.image = self.images[self.direction]
+        self.rect = self.image.get_rect()  # left top width height
+        self.rect.left = left
+        self.stop = False
+        self.rect.top = top
+        self.step = random.randint(50, 100)
+        self.invincible = 1
+
+    def random_direction(self, m_l, m_t):
+        e_l = self.rect.left
+        e_t = self.rect.top
+        delta_l = e_l - m_l
+        delta_t = e_t - m_t
+        dire = random.randint(1, 2)
+        num = random.randint(1, 4)
+        p = random.random()
+        if dire == 1:  # L R
+            if (delta_l < 0) and (p <= 0.8):
+                num = 4
+            else:
+                num = 3
+        elif dire == 2:  # U D
+            if (delta_t < 0) and (p <= 0.8):
+                num = 2
+            else:
+                num = 1
+
+        if num == 1:
+            self.direction = 'U'
+        elif num == 2:
+            self.direction = 'D'
+        elif num == 3:
+            self.direction = 'L'
+        elif num == 4:
+            self.direction = 'R'
+        return self.direction
+
+    def random_move(self, m_l, m_t):
+        if self.step == 0:
+            self.random_direction(m_l, m_t)
+            self.step += random.randint(10, 100)
+        else:
+            self.move()
+            self.step -= 1
+
+    def hit_wall(self):
+        for wall in MainGame.wall_list:
+            if wall.kind != 3 and wall.kind != 5:
+                result = pygame.sprite.collide_rect(wall, self)
+                if result:
+                    self.stay()
+                    a = [self.direction]
+                    b = ['U', 'D', 'L', 'R']
+                    ret = list(set(a) ^ set(b))
+                    choose = random.randint(0, 2)
+                    self.direction = ret[choose]
+
+    def display_enemy_tank(self):
+        self.image = self.images[self.direction]
+        MainGame.window.blit(self.image, self.rect)
+        pass
+
+    def random_fire(self, m_l, m_t):
+        e_l = self.rect.left
+        e_t = self.rect.top
+        delta_l = e_l - m_l
+        delta_t = e_t - m_t
+        num = random.randint(1, 100)
+        if (abs(delta_t) < 10) or (abs(delta_l) < 10):
+            num = random.randint(1, 50)
+        if (abs(delta_t) < 5) or (abs(delta_l) < 5):
+            num = random.randint(1, 30)
+        if (abs(delta_t) < 1) or (abs(delta_l) < 1):
+            num = random.randint(1, 10)
+        if num <= 1:
+            print('e fire')
+            eBullet = self.fire()
+            return eBullet
+
+    pass
+
+
+class Bullet(BaseItem):
+    def __init__(self, tank):
+        self.image = pygame.image.load('resources/images/bullet/bullet_sun.png')
+        self.direction = tank.direction
+        self.speed = speed * 1.5
+        self.rect = self.image.get_rect()
+        if self.direction == 'U':
+            self.rect.left = tank.rect.left + tank.rect.width / 2 - self.rect.width / 2
+            self.rect.top = tank.rect.top - self.rect.width
+        elif self.direction == 'D':
+            self.rect.left = tank.rect.left + tank.rect.width / 2 - self.rect.width / 2
+            self.rect.top = tank.rect.top + tank.rect.height
+        elif self.direction == 'L':
+            self.rect.left = tank.rect.left - self.rect.width
+            self.rect.top = tank.rect.top + tank.rect.height / 2 - self.rect.height / 2
+        elif self.direction == 'R':
+            self.rect.left = tank.rect.left + tank.rect.width
+            self.rect.top = tank.rect.top + tank.rect.height / 2 - self.rect.height / 2
+        self.live = True
+
+    def display_bullet(self):
+        MainGame.window.blit(self.image, self.rect)
+
+    def bullet_move(self):
+        if self.direction == 'U':
+            if self.rect.top > 0:
+                self.rect.top -= self.speed
+            else:
+                self.live = False
+        elif self.direction == 'D':
+            if (self.rect.top + self.rect.height) < MainGame.SCREEN_HEIGHT:
+                self.rect.top += self.speed
+            else:
+                self.live = False
+            pass
+        elif self.direction == 'L':
+            if self.rect.left > 0:
+                self.rect.left -= self.speed
+            else:
+                self.live = False
+            pass
+        elif self.direction == 'R':
+            if (self.rect.left + self.rect.width) < MainGame.SCREEN_WIDTH:
+                self.rect.left += self.speed
+            else:
+                self.live = False
+            pass
+
+    def hit_tank(self):
+        for eTank in MainGame.enemy_tank_list:
+            result = pygame.sprite.collide_rect(eTank, self)
+            if result:
+                self.live = False
+                eTank.live = False
+                explode = Explode(eTank.rect)
+                MainGame.boom_sound.play()
+                MainGame.explode_list.append(explode)
+
+    def hit_my_tank(self):
+        if MainGame.P1_TANK and MainGame.P1_TANK.live:
+            if MainGame.P1_TANK.invincible <= 0:
+                for eBullet in MainGame.enemy_bullet_list:
+                    result = pygame.sprite.collide_rect(eBullet, MainGame.P1_TANK)
+                    if result:
+                        explode = Explode(MainGame.P1_TANK.rect)
+                        MainGame.explode_list.append(explode)
+                        MainGame.boom_sound.play()
+                        eBullet.live = False
+                        MainGame.P1_TANK.live = False
+
+    def hit_wall(self):
+        for wall in MainGame.wall_list:
+            if wall.kind == 3 or wall.kind == 4:
+                continue
+            else:
+                result = pygame.sprite.collide_rect(wall, self)
+                if result:
+                    self.live = False
+                    if wall.kind == 1:
+                        explode = Explode(wall.rect)
+                        MainGame.explode_list.append(explode)
+                        wall.live = False
+
+    pass
+
+
+class Explode(BaseItem):
+    def __init__(self, rect):
+        self.images = [
+            pygame.image.load('resources/images/boom/blast1.gif'),
+            pygame.image.load('resources/images/boom/blast1.gif'),
+            pygame.image.load('resources/images/boom/blast2.gif'),
+            pygame.image.load('resources/images/boom/blast2.gif'),
+            pygame.image.load('resources/images/boom/blast3.gif'),
+            pygame.image.load('resources/images/boom/blast3.gif'),
+            pygame.image.load('resources/images/boom/blast4.gif'),
+            pygame.image.load('resources/images/boom/blast4.gif'),
+            pygame.image.load('resources/images/boom/blast5.gif'),
+            pygame.image.load('resources/images/boom/blast5.gif'),
+            pygame.image.load('resources/images/boom/blast6.gif'),
+            pygame.image.load('resources/images/boom/blast6.gif'),
+            pygame.image.load('resources/images/boom/blast7.gif'),
+            pygame.image.load('resources/images/boom/blast7.gif'),
+            pygame.image.load('resources/images/boom/blast8.gif'),
+            pygame.image.load('resources/images/boom/blast8.gif'),
+            pygame.image.load('resources/images/boom/blast1.gif'),
+            pygame.image.load('resources/images/boom/blast2.gif'),
+            pygame.image.load('resources/images/boom/blast3.gif'),
+            pygame.image.load('resources/images/boom/blast4.gif'),
+            pygame.image.load('resources/images/boom/blast5.gif'),
+            pygame.image.load('resources/images/boom/blast6.gif'),
+            pygame.image.load('resources/images/boom/blast7.gif'),
+            pygame.image.load('resources/images/boom/blast8.gif')
+        ]
+        self.rect = rect
+        self.image = self.images[0]
+        self.live = True
+        self.step = 0
+
+    def display_explode(self):
+        if self.step < len(self.images):
+            MainGame.window.blit(self.image, self.rect)
+            self.image = self.images[self.step]
+            self.step += 1
+
+        else:
+            self.live = False
+            self.step = 0
+
+    pass
+
+
+class Wall(BaseItem):
+    def __init__(self, left, top, kind):
+        self.kind = kind
+        self.image = pygame.image.load('resources/images/walls/%d.png' % self.kind)
+        self.rect = self.image.get_rect()
+        self.rect.left = left
+        self.rect.top = top
+        self.live = True
+
+    def display_wall(self):
+        MainGame.window.blit(self.image, self.rect)
+
+
+def play_bgm(music_file):
+    m = Musice(music_file)
+    m.play_music(0)
+
+
+class Musice():
+    def __init__(self, music):
+        self.music = music
+        pygame.mixer.music.load(self.music)
+
+    def play_music(self, count):
+        pygame.mixer.music.set_volume(0.1)
+        pygame.mixer.music.play(count)
+
+    pass
+
+
+music_path = 'resources/musics/bgm.mp3'
+game = MainGame()
+t1 = threading.Thread(target=game.startGame)
+t2 = threading.Thread(target=play_bgm, args=(music_path,))
+t1.start()
+t2.start()
+t1.join()
+t2.join()
+
+# game.startGame()
